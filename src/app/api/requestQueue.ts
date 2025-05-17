@@ -5,36 +5,35 @@ type QueueItem = {
   init: RequestInit;
   resolve: (res: Response) => void;
   reject: (err: unknown) => void;
+  abortController?: AbortController;
 };
 
 const requestQueue: QueueItem[] = [];
-let processing = false;
+const MAX_CONCURRENCY = 5;
+let activeCount = 0;
 
 export async function enqueueRequest(
   input: RequestInfo,
-  init: RequestInit
+  init: RequestInit,
+  abortController?: AbortController
 ): Promise<Response> {
   return new Promise((resolve, reject) => {
-    requestQueue.push({ input, init, resolve, reject });
-    if (!processing) {
-      processQueue();
-    }
+    requestQueue.push({ input, init, resolve, reject, abortController });
+    processQueue();
   });
 }
 
-async function processQueue() {
-  processing = true;
-
-  while (requestQueue.length > 0) {
-    const { input, init, resolve, reject } = requestQueue.shift()!;
-
-    try {
-      const res = await fetchWithTimeout(input, init);
-      resolve(res);
-    } catch (error) {
-      reject(error);
-    }
+function processQueue() {
+  while (activeCount < MAX_CONCURRENCY && requestQueue.length > 0) {
+    const { input, init, resolve, reject, abortController } =
+      requestQueue.shift()!;
+    activeCount++;
+    fetchWithTimeout(input, init, 10000, abortController)
+      .then(resolve)
+      .catch(reject)
+      .finally(() => {
+        activeCount--;
+        processQueue();
+      });
   }
-
-  processing = false;
 }

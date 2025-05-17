@@ -3,62 +3,123 @@ import { refreshAccessToken } from "./tokenManager";
 import { ApiError } from "./error";
 import { enqueueRequest } from "./requestQueue";
 
+class TokenRefreshLock {
+  private static instance: TokenRefreshLock;
+  private isRefreshing = false;
+  private refreshPromise: Promise<void> | null = null;
+
+  private constructor() {}
+
+  static getInstance(): TokenRefreshLock {
+    if (!TokenRefreshLock.instance) {
+      TokenRefreshLock.instance = new TokenRefreshLock();
+    }
+    return TokenRefreshLock.instance;
+  }
+
+  async acquireRefreshLock(
+    refreshCallback: () => Promise<void>
+  ): Promise<void> {
+    if (this.isRefreshing) {
+      return this.refreshPromise!;
+    }
+
+    this.isRefreshing = true;
+    this.refreshPromise = refreshCallback().finally(() => {
+      this.isRefreshing = false;
+      this.refreshPromise = null;
+    });
+
+    return this.refreshPromise;
+  }
+}
+
 export class ApiClient {
   constructor(private baseUrl: string) {}
 
   async request<T>(
     endpoint: string,
     options: RequestInit = {},
-    headers: Record<string, string> = {}
+    headers: Record<string, string> = {},
+    abortController?: AbortController
   ): Promise<T> {
-    let input: RequestInfo = `${this.baseUrl}${endpoint}`;
+    const tokenRefreshLock = TokenRefreshLock.getInstance();
+    const input: RequestInfo = `${this.baseUrl}${endpoint}`;
 
-    [input, options] = await requestInterceptor(input, {
-      ...options,
+    const prepareRequest = (originalOptions: RequestInit) => {
+      const originalBody = originalOptions.body;
+      const processedOptions = { ...originalOptions };
+
+      if (originalBody instanceof ReadableStream) {
+        const [stream1, stream2] = originalBody.tee();
+        processedOptions.body = stream1;
+        return { processedOptions, originalBody: stream2 };
+      }
+
+      return { processedOptions, originalBody };
+    };
+
+    const { processedOptions: initialOptions, originalBody } =
+      prepareRequest(options);
+
+    let [processedInput, processedOptions] = await requestInterceptor(input, {
+      ...initialOptions,
       headers: {
-        ...(options.headers || {}),
+        ...(initialOptions.headers || {}),
         ...headers,
       },
     });
 
-    const res = await enqueueRequest(input, options);
+    const res = await enqueueRequest(
+      processedInput,
+      processedOptions,
+      abortController
+    );
     const interceptedResponse = await responseInterceptor(res);
 
     if (interceptedResponse.status === 401) {
-      await refreshAccessToken();
+      await tokenRefreshLock.acquireRefreshLock(async () => {
+        await refreshAccessToken();
+      });
 
-      [input, options] = await requestInterceptor(input, {
-        ...options,
+      const retryOptions: RequestInit = { ...options };
+
+      if (originalBody instanceof ReadableStream) {
+        retryOptions.body = originalBody;
+      }
+
+      [processedInput, processedOptions] = await requestInterceptor(input, {
+        ...retryOptions,
         headers: {
-          ...(options.headers || {}),
+          ...(retryOptions.headers || {}),
           ...headers,
         },
       });
 
-      const retryRes = await enqueueRequest(input, options);
+      const retryRes = await enqueueRequest(
+        processedInput,
+        processedOptions,
+        abortController
+      );
       const retryIntercepted = await responseInterceptor(retryRes);
 
       if (!retryIntercepted.ok) {
         const retryBody = await retryIntercepted.json();
         throw new ApiError(
-          "Retry request failed",
+          "토큰 갱신 후 요청 실패",
           retryIntercepted.status,
           retryBody
         );
       }
 
-      return retryIntercepted.json();
+      return retryIntercepted.json() as Promise<T>;
     }
 
     if (!interceptedResponse.ok) {
       const errorBody = await interceptedResponse.json();
-      throw new ApiError(
-        "Request failed",
-        interceptedResponse.status,
-        errorBody
-      );
+      throw new ApiError("요청 실패", interceptedResponse.status, errorBody);
     }
 
-    return interceptedResponse.json();
+    return interceptedResponse.json() as Promise<T>;
   }
 }

@@ -7,7 +7,7 @@ export class UserService extends BaseService<UserRepository> {
     super(repository);
   }
 
-  async getUser(id: string) {
-    return this.repository.getById(id);
+  async getUser(id: string, abortController?: AbortController) {
+    return this.repository.getById(id, abortController);
   }
 }

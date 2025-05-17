@@ -1,5 +1,5 @@
 import { ApiUrl, HeaderKey, XService } from "@/app/constant/api";
-import { BaseRepository } from "./\bindex";
+import { BaseRepository } from "@/app/domain/user/repository/index";
 import { ApiClient } from "@/app/api/ApiClient";
 
 export class UserRepository extends BaseRepository {
@@ -11,7 +11,7 @@ export class UserRepository extends BaseRepository {
     super(apiClient, baseHeaders);
   }
 
-  async getById(id: string) {
-    return this.get(`/users/${id}`);
+  async getById(id: string, abortController?: AbortController) {
+    return this.get(`/users/${id}`, undefined, abortController);
   }
 }

@@ -21,11 +21,12 @@ export async function responseInterceptor(
   response: Response
 ): Promise<Response> {
   if (!response.ok) {
+    if (response.status === 401) {
+      return response;
+    }
+
     if (response.status === 403) {
       logout();
-    }
-    if (response.status >= 500) {
-      alert("서버 오류가 발생했습니다. 잠시 후 다시 시도하세요.");
     }
   }
   return response;

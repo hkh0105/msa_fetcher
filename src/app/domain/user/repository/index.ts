@@ -13,20 +13,26 @@ export abstract class BaseRepository {
     };
   }
 
-  protected async get<T>(endpoint: string, headers?: Record<string, string>) {
+  protected async get<T>(
+    endpoint: string,
+    headers?: Record<string, string>,
+    abortController?: AbortController
+  ) {
     return this.apiClient.request<T>(
       endpoint,
       {
         method: "GET",
       },
-      { ...this.baseHeaders, ...headers }
+      { ...this.baseHeaders, ...headers },
+      abortController
     );
   }
 
   protected async post<T>(
     endpoint: string,
     body: unknown,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
+    abortController?: AbortController
   ) {
     return this.apiClient.request<T>(
       endpoint,
@@ -34,14 +40,16 @@ export abstract class BaseRepository {
         method: "POST",
         body: JSON.stringify(body),
       },
-      { ...this.baseHeaders, ...headers }
+      { ...this.baseHeaders, ...headers },
+      abortController
     );
   }
 
   protected async put<T>(
     endpoint: string,
     body: unknown,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
+    abortController?: AbortController
   ) {
     return this.apiClient.request<T>(
       endpoint,
@@ -49,20 +57,23 @@ export abstract class BaseRepository {
         method: "PUT",
         body: JSON.stringify(body),
       },
-      { ...this.baseHeaders, ...headers }
+      { ...this.baseHeaders, ...headers },
+      abortController
     );
   }
 
   protected async delete<T>(
     endpoint: string,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
+    abortController?: AbortController
   ) {
     return this.apiClient.request<T>(
       endpoint,
       {
         method: "DELETE",
       },
-      { ...this.baseHeaders, ...headers }
+      { ...this.baseHeaders, ...headers },
+      abortController
     );
   }
 }
